@@ -11,15 +11,15 @@ oneforall_python = os.path.join(oneforall_dir, ".venv", "bin", "python")
 oneforall_script = os.path.join(oneforall_dir, "oneforall.py")
 oneforall_db = os.path.join(oneforall_dir, "results", "result.sqlite3")
 
-# subprocess.run([oneforall_python, oneforall_script, "--help"], cwd=oneforall_dir)
 
 mcp = FastMCP("submain_collect")
 
+processes = {}
 
 @mcp.tool()
 def test():
     """
-    使用其它工具前，先测试能否正常运行子域收集脚本
+    若其他工具出错，利用此工具测试能否正常运行子域收集脚本
     """
     result = subprocess.run(
         [oneforall_python, oneforall_script, "--help"],
@@ -37,32 +37,64 @@ def test():
 def submain_collect(domain: str) -> str:
     """
     针对目标域名启动 OneForAll 子域名收集任务。
-    这是一个耗时操作。该工具仅返回任务是否成功启动及执行状态。
+    异步启动 OneForAll 扫描任务。
+    立即返回启动状态，不会阻塞等待结果。
     
     Args:
         domain: 要扫描的目标主域名 (例如: example.com)
     """
+    if domain in processes and processes[domain].poll() is None:
+        return f"域名 {domain} 的扫描任务已经在运行中，请稍后检查。"
     try:
-        # 执行 OneForAll 扫描命令
-        # 注意：--show False 是为了减少不必要的输出，--fmt sqlite 是确保存入数据库
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [oneforall_python, oneforall_script, "--target", domain, "run"],
             cwd=oneforall_dir,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
-            timeout=600 # 设置 10 分钟超时，根据需求调整
+            stdout=subprocess.DEVNULL, # 避免输出塞满缓冲区
+            stderr=subprocess.DEVNULL,
+            start_new_session=True     # 在后台独立运行
         )
-
-        if result.returncode == 0:
-            return f"✅ 扫描任务完成：域名 {domain} 的结果已存入数据库。"
-        else:
-            return f"❌ 扫描任务失败 (Code {result.returncode})"
-
-    except subprocess.TimeoutExpired:
-        return f"⚠️ 扫描任务在 {domain} 上运行时间过长，已切入后台或被取消。"
+        processes[domain] = proc
+        return f"🚀 已成功在后台启动对 {domain} 的扫描。请在 1-2 分钟后使用 search_db 工具查询结果。"
     except Exception as e:
-        return f"❌ 运行异常: {str(e)}"
+        return f"❌ 启动失败: {str(e)}"
+    
+@mcp.tool()
+def check_status(domain: str) -> str:
+    """
+    通过检查数据库中是否存在对应的结果表来确认扫描状态。
+    OneForAll 完成后会生成一个名为 'domain_name' (点替换为下划线) 的表。
+    
+    Args:
+        domain: 目标域名 (例如: example.com)
+    """
+    # 处理表名逻辑：将 example.com 转换为 example_com
+    table_name = domain.replace('.', '_')
+
+    # 检查数据库文件是否存在
+    if not os.path.exists(oneforall_db):
+        return f"数据库文件尚未生成。扫描任务可能仍在初始化，或尚未产生任何结果数据。"
+
+    try:
+        # 连接数据库查询元数据
+        conn = sqlite3.connect(oneforall_db)
+        cursor = conn.cursor()
+        
+        # 查询 sqlite_master 表来检查特定表名是否存在
+        # sqlite_master 是 SQLite 的内置表，存储了所有表的信息
+        sql_check = "SELECT name FROM sqlite_master WHERE type='table' AND name=?;"
+        cursor.execute(sql_check, (table_name,))
+        result = cursor.fetchone()
+        
+        conn.close()
+
+        # 4. 根据查询结果判断
+        if result:
+            return f"扫描已完成！\n数据库中已生成结果表: {table_name}\n你现在可以调用 search_db() 使用 SQL 语句来分析结果了。"
+        else:
+            return f"扫描任务仍在进行中...\n目标表 {table_name} 尚未在数据库中生成。请稍后再试。"
+
+    except sqlite3.Error as e:
+        return f"数据库查询出错: {str(e)}"
     
 @mcp.tool()
 def search_db(sql: str) -> str:
