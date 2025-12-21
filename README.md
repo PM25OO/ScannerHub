@@ -42,9 +42,32 @@ cd .mcp-server/
 uv sync
 ```
 
+### 从 JSON 导入MCP服务器
+以vscode的 `mcp.json` 为例  
+```json
+{
+    "servers": {
+        "Scanner_Hub": {
+            "command": "uv",           // Windows环境下可能需要替换为绝对路径
+            "args": [
+                "--directory",
+                "PATH/TO/mcp-server",  // mcp-server文件夹的路径
+                "run",
+                "python",
+                "-u",
+                "main.py"
+            ],
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            }
+        }
+    }
+}
+```
+
 ### TODO
 - [x] 环境搭建
-- [ ] 子域收集功能
+- [x] 子域收集功能
 - [ ] 空间测绘功能
 - [ ] 指纹识别功能
 - [ ] 路径发现功能 
