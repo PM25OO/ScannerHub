@@ -1,8 +1,7 @@
-from mcp.server.fastmcp import FastMCP
+from app import mcp
 import os
 import subprocess
 import sqlite3
-import sys
 import platform
 
 current_script_path = os.path.abspath(__file__)
@@ -20,36 +19,7 @@ oneforall_script = os.path.join(oneforall_dir, "oneforall.py")
 oneforall_db = os.path.join(oneforall_dir, "results", "result.sqlite3")
 
 
-mcp = FastMCP("submain_collect")
-
 processes = {}
-
-@mcp.prompt()
-def pentest_expert_mode(domain: str) -> str:
-    """
-    进入渗透测试专家模式，针对特定域名进行全自动化的资产发现与风险评估。
-    """
-    return f"""
-你现在是一名拥有 10 年经验的【资深渗透测试工程师】。
-你的目标是完成针对域名 `{domain}` 的全面资产梳理。
-
-### 你的行动准则：
-1. **自主性**：如果用户让你“分析资产”，你应当自主调用 `submain_collect` 启动扫描，而不是询问用户是否开始。
-2. **状态感知**：启动扫描后，你应该主动调用 `check_status` 观察进度。如果未完成，请告知用户预计等待时间，并引导用户在稍后继续。
-3. **深度追溯**：一旦 `check_status` 返回成功，你必须立即自主调用 `search_db` 进行多维度分析。
-
-### 你的分析路径（逻辑链）：
-- **第一步：基础资产统计**。统计总子域名数、独立 IP 数。
-- **第二步：敏感资产发现**。主动执行 SQL 查询那些包含 "admin", "test", "dev", "api", "v1" 等关键字的子域名。
-- **第三步：风险评估**。查询那些指向了特定敏感服务或具有非 80/443 端口的资产。
-- **第四步：总结报告**。不需要用户提醒，直接根据数据库内容输出一份资产分布报告。
-
-### 限制：
-- 始终以专业的、结构化的安全报告格式回答。
-- 如果 SQL 执行报错，请根据错误信息尝试修正 SQL 并再次尝试，不要轻易放弃。
-
-现在，请开始针对 `{domain}` 的渗透测试任务。
-"""
 
 @mcp.tool()
 def test():
@@ -152,6 +122,67 @@ def search_db(sql: str) -> str:
     """
     在 OneForAll 的 SQLite 数据库中执行 SQL 查询语句。
     你可以使用此工具来检索、过滤、统计已扫描到的子域名信息。
+    以下为表中部分字段说明：
+
+    id: 标识作用无意义
+
+    new: 标记是否是新发现的子域名
+    
+    alive: 是否存活，不存活的判定情况包含：无法解析IP、网络不可达、400、5XX等
+    
+    request: 记录HTTP请求是否成功字段，为空是无法解析IP，为0是网络不可达，为1是成功请求
+    
+    resolve: 记录DNS解析是否成功
+    
+    url: 请求的url链接
+    
+    subdomain: 子域名
+    
+    level: 是几级子域名
+    
+    cname: cname记录
+    
+    ip: 解析到的IP
+    
+    public: 是否是公网IP
+    
+    cdn: 解析的IP是否CDN
+    
+    port: 请求的网络端口
+    
+    status: HTTP响应的状态码
+    
+    reason: 网络连接情况及详情
+    
+    title: 网站标题
+    
+    banner: 网站指纹信息
+    
+    history: 请求时URL跳转历史
+    
+    response: 响应体文本内容
+    
+    times: 在爆破中ip重复出现的次数
+    
+    ttl: DNS解析返回的TTL值
+    
+    cidr: ip2location库查询出的CIDR
+    
+    asn: ip2location库查询出的ASN
+    
+    addr: ip2region库查询出的物理地址
+    
+    isp: ip2region库查询出的网络服务提供商
+    
+    resolver: 所使用的DNS解析服务器
+    
+    module: 发现本子域名所使用的模块
+    
+    source: 发现本子域名的具体来源
+    
+    elapse: 当前模块发现用时
+    
+    find: 当前模块发现的子域个数
     
     Args:
         sql: 标准 SQLite 查询语句 (例如: SELECT subdomain, ip FROM result WHERE subdomain LIKE '%admin%')

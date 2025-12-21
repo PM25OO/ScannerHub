@@ -1,4 +1,5 @@
-from submain import mcp
+from app import mcp
+import tools
 
 def main():
     mcp.run(transport="stdio")
