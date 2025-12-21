@@ -76,7 +76,7 @@ def submain_collect(domain: str) -> str:
         return f"❌ 启动失败: {str(e)}"
     
 @mcp.tool()
-def check_status(domain: str) -> str:
+def check_ofa_status(domain: str) -> str:
     """
     通过检查数据库中是否存在对应的结果表来确认扫描状态。
     OneForAll 完成后会生成一个名为 'domain_name' (点替换为下划线) 的表。
