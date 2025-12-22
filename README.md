@@ -77,7 +77,6 @@ uv sync
 ### Tools
 | 名称 | 参数 | 功能描述 |
 | --- | --- | --- |
-| test | 无 | 验证 OneForAll 脚本环境是否可用。 |
 | submain_collect | domain: 目标主域名 | 异步启动 OneForAll 子域名收集任务。 |
 | check_ofa_status | domain: 目标主域名 | 检查 OneForAll 结果表是否生成，判断任务是否完成。 |
 | get_db_schema | 无 | 查看 OneForAll 结果库的表结构。 |
@@ -101,3 +100,4 @@ uv sync
 - [ ] 空间测绘功能
 - [x] 指纹识别功能
 - [x] 路径发现功能 
+- [ ] 攻击向量分析
