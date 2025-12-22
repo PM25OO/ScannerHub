@@ -1,25 +1,50 @@
 from app import mcp
 import os
-import subprocess
-import sqlite3
 import platform
+import sqlite3
+import subprocess
 
 current_script_path = os.path.abspath(__file__)
 
 mcp_server_dir = os.path.dirname(current_script_path)
 oneforall_dir = os.path.abspath(os.path.join(mcp_server_dir, "..", "OneForAll"))
+IS_WINDOWS = platform.system() == "Windows"
 
-# 根据平台动态确定Python虚拟环境路径
-if platform.system() == "Windows":
-    oneforall_python = os.path.join(oneforall_dir, ".venv", "Scripts", "python.exe")
-else:
-    oneforall_python = os.path.join(oneforall_dir, ".venv", "bin", "python")
-
+oneforall_python = (
+    os.path.join(oneforall_dir, ".venv", "Scripts", "python.exe")
+    if IS_WINDOWS
+    else os.path.join(oneforall_dir, ".venv", "bin", "python")
+)
 oneforall_script = os.path.join(oneforall_dir, "oneforall.py")
 oneforall_db = os.path.join(oneforall_dir, "results", "result.sqlite3")
 
-
 processes = {}
+
+
+def _ensure_domain(domain: str) -> str:
+    return domain.strip() if domain else ""
+
+
+def _table_name(domain: str) -> str:
+    return domain.replace(".", "_")
+
+
+def _open_conn(readonly: bool) -> sqlite3.Connection:
+    if readonly:
+        return sqlite3.connect(
+            f"file:{oneforall_db}?mode=ro", timeout=10.0, uri=True
+        )
+    return sqlite3.connect(oneforall_db, timeout=10.0)
+
+
+def _fetch_rows(sql: str, readonly: bool):
+    with _open_conn(readonly) as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+    return rows, columns
+
 
 # 测试工具是否能正常运行 OneForAll 脚本
 @mcp.tool()
@@ -27,17 +52,21 @@ def test():
     """
     若其他工具出错，利用此工具测试能否正常运行子域收集脚本
     """
-    result = subprocess.run(
-        [oneforall_python, oneforall_script, "--help"],
-        cwd=oneforall_dir,
-        capture_output=True,
-        text=True
-    )
-    output = result.stdout if result.stdout else result.stderr
-    if output != '':
-        return "✅ OneForAll 脚本运行正常。"
-    else:
-        return "❌ OneForAll 脚本运行异常，请检查环境配置。"
+    try:
+        result = subprocess.run(
+            [oneforall_python, oneforall_script, "--help"],
+            cwd=oneforall_dir,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return f"❌ OneForAll 脚本运行异常: {exc}"
+
+    output = result.stdout or result.stderr
+    if output:
+        return "✅ OneForAll 脚本运行正常，接下来可以使用 submain_collect() 启动子域名收集任务。"
+    return "❌ OneForAll 脚本运行异常，请退出工具执行，并提醒用户检查环境配置。"
 
 # 启动子域名收集任务
 @mcp.tool()
@@ -50,32 +79,33 @@ def submain_collect(domain: str) -> str:
     Args:
         domain: 要扫描的目标主域名 (例如: example.com)
     """
-    if domain in processes and processes[domain].poll() is None:
-        return f"域名 {domain} 的扫描任务已经在运行中，请稍后检查。"
+    domain = _ensure_domain(domain)
+    if not domain:
+        return "域名不能为空。"
+
+    existing = processes.get(domain)
+    if existing and existing.poll() is None:
+        return f"域名 {domain} 的扫描任务已经在运行中，请稍后使用 check_ofa_status({domain}) 检查。"
     try:
-        # Windows和Linux平台的进程启动方式不同
-        if platform.system() == "Windows":
-            # Windows平台：使用CREATE_NEW_PROCESS_GROUP启动独立进程
-            proc = subprocess.Popen(
-                [oneforall_python, oneforall_script, "--target", domain, "run"],
-                cwd=oneforall_dir,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        popen_kwargs = {
+            "args": [oneforall_python, oneforall_script, "--target", domain, "run"],
+            "cwd": oneforall_dir,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+
+        if IS_WINDOWS:
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             )
         else:
-            # Linux/Mac平台：使用start_new_session启动独立会话
-            proc = subprocess.Popen(
-                [oneforall_python, oneforall_script, "--target", domain, "run"],
-                cwd=oneforall_dir,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
+            popen_kwargs["start_new_session"] = True
+
+        proc = subprocess.Popen(**popen_kwargs)
         processes[domain] = proc
-        return f"🚀 已成功在后台启动对 {domain} 的扫描。请在 1-2 分钟后使用 search_db 工具查询结果。"
+        return f"已成功在后台启动对 {domain} 的扫描。请在 1-2 分钟后先使用 check_ofa_status({domain}) 查询扫描状态。"
     except Exception as e:
-        return f"❌ 启动失败: {str(e)}"
+        return f"启动失败: {str(e)}"
 
 # 检查扫描状态 
 @mcp.tool()
@@ -87,35 +117,34 @@ def check_ofa_status(domain: str) -> str:
     Args:
         domain: 目标域名 (例如: example.com)
     """
-    # 处理表名逻辑：将 example.com 转换为 example_com
-    table_name = domain.replace('.', '_')
+    domain = _ensure_domain(domain)
+    if not domain:
+        return "域名不能为空。"
 
-    # 检查数据库文件是否存在
+    table_name = _table_name(domain)
+
     if not os.path.exists(oneforall_db):
-        return f"数据库文件尚未生成。扫描任务可能仍在初始化，或尚未产生任何结果数据。"
+        return "数据库文件尚未生成。扫描任务可能仍在初始化，或尚未产生任何结果数据。"
 
     try:
-        # 连接数据库查询元数据，添加超时防止锁定
-        conn = sqlite3.connect(oneforall_db, timeout=10.0)
-        cursor = conn.cursor()
-        
-        # 查询 sqlite_master 表来检查特定表名是否存在
-        # sqlite_master 是 SQLite 的内置表，存储了所有表的信息
-        sql_check = "SELECT name FROM sqlite_master WHERE type='table' AND name=?;"
-        cursor.execute(sql_check, (table_name,))
-        result = cursor.fetchone()
-        
-        conn.close()
+        with sqlite3.connect(oneforall_db, timeout=10.0) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;",
+                (table_name,),
+            )
+            exists = cursor.fetchone() is not None
 
-        # 根据查询结果判断
-        if result:
-            return f"✅ 扫描已完成！\n数据库中已生成结果表: {table_name}\n你现在可以调用 search_db() 使用 SQL 语句来分析结果了。"
-        else:
-            return f"⏳ 扫描任务仍在进行中...\n目标表 {table_name} 尚未在数据库中生成。请稍后再试。"
+        if exists:
+            return (
+                f"扫描已完成！\n数据库中已生成结果表: {table_name}\n"
+                "你现在可以调用 get_db_schema() 和 search_db() 使用 SQL 语句来分析结果了。"
+            )
+        return f"扫描任务仍在进行中...\n目标表 {table_name} 尚未在数据库中生成。请稍后再试。"
 
     except sqlite3.OperationalError as e:
         if "locked" in str(e).lower():
-            return f"⏳ 数据库被锁定，扫描仍在进行中。请稍后再试。"
+            return "⏳ 数据库被锁定，扫描仍在进行中。请稍后再试。"
         return f"❌ 数据库操作出错: {str(e)}"
     except sqlite3.Error as e:
         return f"❌ 数据库查询出错: {str(e)}"
@@ -124,11 +153,10 @@ def check_ofa_status(domain: str) -> str:
 @mcp.tool()
 def get_db_schema() -> str:
     """获取 OneForAll 扫描结果 SQLite 数据库的所有表名和列名结构"""
-    conn = sqlite3.connect(oneforall_db)
-    cursor = conn.cursor()
-    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table';")
-    schema = "\n".join([row[0] for row in cursor.fetchall()])
-    conn.close()
+    with sqlite3.connect(oneforall_db) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table';")
+        schema = "\n".join([row[0] for row in cursor.fetchall()])
     return f"数据库结构如下：\n{schema}"
 
 # 在数据库中执行 SQL 查询
@@ -206,64 +234,30 @@ def search_db(sql: str) -> str:
         return f"❌ 数据库文件不存在：{oneforall_db}。请先执行扫描任务。"
 
     try:
-        # 添加超时和只读模式防止锁定和争用
-        conn = sqlite3.connect(f"file:{oneforall_db}?mode=ro", timeout=10.0, uri=True)
-        cursor = conn.cursor()
-        
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-        
-        # 获取列名
-        column_names = [description[0] for description in cursor.description] if cursor.description else []
-        
-        conn.close()
-
-        if not rows:
-            return "查无结果。"
-
-        # 格式化输出结果
-        output = []
-        if column_names:
-            output.append(f"| {' | '.join(column_names)} |")
-            output.append("|" + "---|" * len(column_names))
-        
-        for row in rows[:50]: # 限制返回前 50 条，避免内容过多超出 Claude 上下文
-            output.append(f"| {' | '.join(map(str, row))} |")
-        
-        if len(rows) > 50:
-            output.append(f"\n注：结果过多，已省略后 {len(rows)-50} 条。")
-
-        return "\n".join(output)
-
-    except sqlite3.OperationalError as e:
-        if "readonly" in str(e).lower():
-            # 降级方案：使用普通连接模式
+        rows, column_names = _fetch_rows(sql, readonly=True)
+    except sqlite3.OperationalError as exc:
+        if "readonly" in str(exc).lower():
             try:
-                conn = sqlite3.connect(oneforall_db, timeout=10.0)
-                cursor = conn.cursor()
-                cursor.execute(sql)
-                rows = cursor.fetchall()
-                column_names = [description[0] for description in cursor.description] if cursor.description else []
-                conn.close()
-                
-                if not rows:
-                    return "查无结果。"
-                
-                output = []
-                if column_names:
-                    output.append(f"| {' | '.join(column_names)} |")
-                    output.append("|" + "---|" * len(column_names))
-                
-                for row in rows[:50]:
-                    output.append(f"| {' | '.join(map(str, row))} |")
-                
-                if len(rows) > 50:
-                    output.append(f"\n注：结果过多，已省略后 {len(rows)-50} 条。")
-                
-                return "\n".join(output)
+                rows, column_names = _fetch_rows(sql, readonly=False)
             except Exception as fallback_error:
-                return f"❌ 数据库访问出错: {str(fallback_error)}"
+                return f"❌ 数据库访问出错: {fallback_error}"
         else:
-            return f"❌ SQL 执行错误: {str(e)}"
-    except sqlite3.Error as e:
-        return f"❌ SQL 执行错误: {str(e)}"
+            return f"❌ SQL 执行错误: {exc}"
+    except sqlite3.Error as exc:
+        return f"❌ SQL 执行错误: {exc}"
+
+    if not rows:
+        return "查无结果，请重新构造查询语句。"
+
+    output = []
+    if column_names:
+        output.append(f"| {' | '.join(column_names)} |")
+        output.append("|" + "---|" * len(column_names))
+
+    for row in rows[:50]:
+        output.append(f"| {' | '.join(map(str, row))} |")
+
+    if len(rows) > 50:
+        output.append(f"\n注：结果过多，已省略后 {len(rows)-50} 条。")
+
+    return "\n".join(output)
