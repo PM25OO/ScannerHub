@@ -4,9 +4,7 @@ import platform
 import sqlite3
 import subprocess
 
-current_script_path = os.path.abspath(__file__)
-
-mcp_server_dir = os.path.dirname(current_script_path)
+mcp_server_dir = os.path.dirname(os.path.dirname(__file__))
 oneforall_dir = os.path.abspath(os.path.join(mcp_server_dir, "..", "OneForAll"))
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -45,28 +43,6 @@ def _fetch_rows(sql: str, readonly: bool):
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
     return rows, columns
 
-
-# 测试工具是否能正常运行 OneForAll 脚本
-@mcp.tool()
-def test():
-    """
-    若其他工具出错，利用此工具测试能否正常运行子域收集脚本
-    """
-    try:
-        result = subprocess.run(
-            [oneforall_python, oneforall_script, "--help"],
-            cwd=oneforall_dir,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        return f"❌ OneForAll 脚本运行异常: {exc}"
-
-    output = result.stdout or result.stderr
-    if output:
-        return "✅ OneForAll 脚本运行正常，接下来可以使用 submain_collect() 启动子域名收集任务。"
-    return "❌ OneForAll 脚本运行异常，请退出工具执行，并提醒用户检查环境配置。"
 
 # 启动子域名收集任务
 @mcp.tool()

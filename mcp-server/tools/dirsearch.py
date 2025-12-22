@@ -3,9 +3,7 @@ import os
 import platform
 import subprocess
 
-current_script_path = os.path.abspath(__file__)
-
-mcp_server_dir = os.path.dirname(current_script_path)
+mcp_server_dir = os.path.dirname(os.path.dirname(__file__))
 dsr_dir = os.path.abspath(os.path.join(mcp_server_dir, ".venv", "Lib", "site-packages", "dirsearch"))
 dsr_script = os.path.join(dsr_dir, "dirsearch.py")
 dsr_output = os.path.join(dsr_dir, "reports")
