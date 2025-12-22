@@ -21,6 +21,7 @@ oneforall_db = os.path.join(oneforall_dir, "results", "result.sqlite3")
 
 processes = {}
 
+# 测试工具是否能正常运行 OneForAll 脚本
 @mcp.tool()
 def test():
     """
@@ -38,6 +39,7 @@ def test():
     else:
         return "❌ OneForAll 脚本运行异常，请检查环境配置。"
 
+# 启动子域名收集任务
 @mcp.tool()
 def submain_collect(domain: str) -> str:
     """
@@ -74,7 +76,8 @@ def submain_collect(domain: str) -> str:
         return f"🚀 已成功在后台启动对 {domain} 的扫描。请在 1-2 分钟后使用 search_db 工具查询结果。"
     except Exception as e:
         return f"❌ 启动失败: {str(e)}"
-    
+
+# 检查扫描状态 
 @mcp.tool()
 def check_ofa_status(domain: str) -> str:
     """
@@ -116,7 +119,19 @@ def check_ofa_status(domain: str) -> str:
         return f"❌ 数据库操作出错: {str(e)}"
     except sqlite3.Error as e:
         return f"❌ 数据库查询出错: {str(e)}"
-    
+
+# 获取数据库结构  
+@mcp.tool()
+def get_db_schema() -> str:
+    """获取 OneForAll 扫描结果 SQLite 数据库的所有表名和列名结构"""
+    conn = sqlite3.connect(oneforall_db)
+    cursor = conn.cursor()
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table';")
+    schema = "\n".join([row[0] for row in cursor.fetchall()])
+    conn.close()
+    return f"数据库结构如下：\n{schema}"
+
+# 在数据库中执行 SQL 查询
 @mcp.tool()
 def search_db(sql: str) -> str:
     """
