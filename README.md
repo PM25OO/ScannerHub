@@ -8,7 +8,7 @@
 
 ~~(开始画饼)~~ 一款基于 LLM 驱动，综合了情报收集，威胁建模，漏洞分析，漏洞利用，后渗透攻击，报告与修复的 MCP 服务器。相比传统 Agent 模式，其跨平台互操作性，安全性与权限控制更具优势
 
-### 致谢
+## 致谢
 
 子域收集：[shmilylty/OneForAll](https://github.com/shmilylty/OneForAll)  
 
@@ -16,7 +16,7 @@
 
 开发SDK：[modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk)
 
-### 目录结构
+## 目录结构
 
 ``````Plaintext
 /Scan_Tool/
@@ -31,7 +31,7 @@
     └── ...
 ``````
 
-### 环境搭建
+## 环境搭建
 
 此项目使用 `uv` 进行管理
 
@@ -50,7 +50,7 @@ cd .mcp-server/
 uv sync
 ```
 
-### 从 JSON 导入MCP服务器
+## 从 JSON 导入MCP服务器
 以vscode的 `mcp.json` 为例  
 ```json
 {
@@ -73,8 +73,8 @@ uv sync
 }
 ```
 
-### 原语汇总
-#### Tools
+## 原语汇总
+### Tools
 | 名称 | 参数 | 功能描述 |
 | --- | --- | --- |
 | test | 无 | 验证 OneForAll 脚本环境是否可用。 |
@@ -85,17 +85,17 @@ uv sync
 | dirsearch | domain: 目标域名/URL | 异步启动 dirsearch 目录扫描，生成 Markdown 报告。 |
 | check_dsr_status | domain: 目标域名/URL | 检查 dirsearch 报告是否生成。 |
 
-#### Prompts
+### Prompts
 | 名称 | 参数 | 功能描述 |
 | --- | --- | --- |
 | pentest_expert_mode | domain：目标域名 | 进入渗透测试专家模式 |
 
-#### Resources
+### Resources
 | 名称 | 参数 | 功能描述 |
 | --- | --- | --- |
 | get_report | domain_underscored | 读取指定域名的 dirsearch Markdown 扫描报告内容。 |
 
-### TODO
+## TODO
 - [x] 环境搭建
 - [x] 子域收集功能
 - [ ] 空间测绘功能
