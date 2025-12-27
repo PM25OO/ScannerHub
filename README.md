@@ -1,5 +1,3 @@
-# ScannerHub-渗透一把梭
-
 <div style="width: 100%; max-width: 600px; margin: 0 auto;">
   <img src="logo.png" alt="ScannerHub Logo" style="width: 100%; height: auto; display: block; margin: 0 auto;">
 </div>
